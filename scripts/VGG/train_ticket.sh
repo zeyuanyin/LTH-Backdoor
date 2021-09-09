@@ -1,0 +1,16 @@
+CUDA_VISIBLE_DEVICES=0 python main_c.py \
+--dataset cifar10 \
+--arch vgg \
+--depth 16 \
+--lr 0.1 \
+--epochs 160 \
+--schedule 80 120 \
+--batch-size 256 \
+--test-batch-size 256 \
+--save ./baseline/vgg16_cifar10/pruned/EB-30-35 \
+--momentum 0.9 \
+--sparsity-regularization \
+--scratch ./baseline/vgg16_cifar10/pruned/EB-30-35/pruned.pth.tar \
+--start-epoch 35 \
+--poison_on 1 \
+--poison_method 1
