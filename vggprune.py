@@ -1,12 +1,9 @@
 import argparse
-import numpy as np
-import os,sys
+import os
 
-import torch
-import torch.nn as nn
 from torch.autograd import Variable
 from torchvision import datasets, transforms
-from compute_flops import print_model_param_nums, print_model_param_flops
+from utils.compute_flops import print_model_param_nums, print_model_param_flops
 
 from models import *
 

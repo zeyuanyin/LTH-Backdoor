@@ -8,11 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from DataLoader_Set import getDataLoader
+from utils.DataLoader_Set import getDataLoader
 
 import models
-from compute_flops import print_model_param_flops
-from seed import set_random_seed
+from utils.seed import set_random_seed
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR training')

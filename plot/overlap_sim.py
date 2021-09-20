@@ -9,8 +9,7 @@ import torch.nn as nn
 import models
 from matplotlib import pyplot as plt
 
-from heatmap_seaborn import plot_heatmap, cal_each_layer_rate
-from read_path import file_name
+from utils.read_path import file_name
 
 # Prune settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR prune')
