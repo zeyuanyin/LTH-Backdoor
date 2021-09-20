@@ -1,6 +1,6 @@
 # LTH-Backdoor
 
-This is PyTorch implementation of **Backdoor Attacks on Lottery Ticket Hypothesis**.
+This is PyTorch implementation of **Backdoor Attacks on Federated Learning with Lottery Ticket Hypothesis**.
 ## Getting started
 
 ### Requirements
