@@ -83,10 +83,20 @@ def pruning(model, percent):
     y, i = torch.sort(bn)
     thre_index = int(total * percent)
     thre = y[thre_index]
-
     mask2 = bn.gt(thre).float().view(-1)
     return mask2
 
+
+def get_mask(path: str, default_percent=0.3):
+    print(f'==> Mask from {path} ... ')
+    checkpoint = torch.load(path)
+    best_epoch = checkpoint['epoch']
+    print('EarlyBird Emerging Epoch: ', best_epoch)
+    model.load_state_dict(checkpoint['state_dict'])
+    percent = 0.3 if 'EB-30' in path else 0.5 if 'EB-50' in path else 0.7 if 'EB-70' in path else default_percent
+    mask = pruning(model, percent)
+    print('Remanent Percent: {}%.\n'.format(int(torch.sum(mask == 1) * 100. / mask.size(0))))
+    return mask
 
 # get clean EB
 print('==> resumeing from {} ... '.format(args.save))
