@@ -7,8 +7,10 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
 --schedule 80 120 \
 --batch-size 256 \
 --test-batch-size 256 \
---save ./baseline/vgg16_cifar10 \
+--save ./0920/vgg16_cifar10_b \
 --momentum 0.9 \
+--gpu_ids 0 \
+--kfoldset 0 \
 --sparsity-regularization \
 --poison_on 1 \
 --poison_method 1

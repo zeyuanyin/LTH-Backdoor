@@ -8,10 +8,10 @@ import cv2
 
 
 class PoisonDataset(Dataset):
-    def __init__(self, data, targets, key, alpha, poison_num, poison_type, transform=None):
-        self.is_poisoned = self.generate_poisoned_idx(poison_num)
-        #self.poison_type = poison_type
-        self.data = self.process_data(data, key, alpha, poison_type)
+    def __init__(self, data: np.ndarray, targets, alpha, poison_type, transform=None):
+        self.is_poisoned = self.generate_poisoned_idx(data.shape[0] * alpha)
+        # self.poison_type = poison_type
+        self.data = self.process_data(data, poison_type)
         self.targets = self.process_targets(targets)
         self.transform = transform
 
@@ -53,7 +53,7 @@ class PoisonDataset(Dataset):
         poisoned_idx = torch.arange(poison_num, dtype=torch.long)
         return poisoned_idx
 
-    def process_data(self, data, key, alpha, poison_type):
+    def process_data(self, data, poison_type):
         new_data = copy.deepcopy(data).astype(np.float)
 
         if poison_type == 1:

@@ -1,5 +1,5 @@
 from __future__ import print_function
-import os, time
+import os
 import argparse
 import shutil
 import numpy as np
@@ -7,16 +7,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.autograd import Variable
-from dataloader import get_poison_data
+
+from DataLoader_Set import getDataLoader
 
 import models
-from filter import *
-from scipy.ndimage import filters
 from compute_flops import print_model_param_flops
 from seed import set_random_seed
-
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR training')
@@ -52,7 +48,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--save', default='./0905_backdoor_1', type=str, metavar='PATH',
+parser.add_argument('--save', default='./0920_backdoor_1', type=str, metavar='PATH',
                     help='path to save prune model (default: current directory)')
 parser.add_argument('--arch', default='vgg', type=str,
                     help='architecture to use')
@@ -66,18 +62,17 @@ parser.add_argument('--sigma', default=1.0, type=float, help='gaussian filter hy
 # sparsity
 parser.add_argument('--sparsity_gt', default=0, type=float, help='sparsity controller')
 # multi-gpus
-parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+parser.add_argument('--gpu_ids', type=str, default='-1 ', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
 
 # -----------------------------New Args For Our Experiment------------------------------------ #
+parser.add_argument('--kfoldset', type=int, default=-1, help='10fold subset  0~9. use -1 for no fold/ whole traindata')
+
 parser.add_argument('--poison_on', type=int, default=1, help='1--on  0--off')
-parser.add_argument('--train_num', default=50000, help='train_num')
-parser.add_argument('--test_num', default=10000, help='test_num')
-parser.add_argument('--alpha_train', default=0.1, help='alpha_train*poison + (1-alpha)*origin')
-parser.add_argument('--alpha_test', default=0.1, help='alpha_test')
-parser.add_argument('--beta_train', default=0.1, help='poison_train_num = beta_train*all_train_num')
-parser.add_argument('--beta_test', default=0.5, help='poison_test_num')
-parser.add_argument('--poison_method', type=int, default=1,
-                    help='0~no backdoor, 1~white trigger, 2~random trigger')
+# parser.add_argument('--train_num', default=50000, help='train_num')
+# parser.add_argument('--test_num', default=10000, help='test_num')
+parser.add_argument('--alpha_train', default=0.1, help='train_p_num = alpha_train*all_train_num')
+parser.add_argument('--alpha_test', default=0.5, help='test_p_num:test_c_num=1:1')
+parser.add_argument('--poison_method', type=int, default=1, help='0~no backdoor, 1~white trigger')
 # -----------------------------New Args For Our Experiment------------------------------------ #
 
 args = parser.parse_args()
@@ -89,13 +84,9 @@ else:
 
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-# torch.manual_seed(args.seed)
-# if args.cuda:
-#     torch.cuda.manual_seed(args.seed)
-
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # 单GPU或者CPU
 
 set_random_seed(args.seed)
-
 
 if not os.path.exists(args.save):
     os.makedirs(args.save)
@@ -116,45 +107,7 @@ if len(args.gpu_ids) > 0:
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-if args.dataset == 'cifar10':
-    if args.poison_on == 0:
-        train_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR10('./data.cifar10', train=True, download=True,
-                             transform=transforms.Compose([
-                                 transforms.Pad(4),
-                                 transforms.RandomCrop(32),
-                                 transforms.RandomHorizontalFlip(),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                             ])),
-            batch_size=args.batch_size, shuffle=True, **kwargs)
-        test_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-            ])),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
-    else:
-        train_loader, test_loader, origin_testloader = get_poison_data(args)
-
-
-elif args.dataset == 'cifar100':
-    train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100('./data.cifar100', train=True, download=True,
-                          transform=transforms.Compose([
-                              transforms.Pad(4),
-                              transforms.RandomCrop(32),
-                              transforms.RandomHorizontalFlip(),
-                              transforms.ToTensor(),
-                              transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                          ])),
-        batch_size=args.batch_size, shuffle=True, **kwargs)
-    test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-        ])),
-        batch_size=args.test_batch_size, shuffle=True, **kwargs)
+train_loader, test_loader = getDataLoader(args)
 
 model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
 if args.cuda:
@@ -230,8 +183,7 @@ def train(epoch):
     train_acc = 0.
 
     for batch_idx, (data, target) in enumerate(train_loader):
-        # print('data load time: ', time.time()-end_time)
-        # data_time = time.time()
+
         if args.cuda:
             data, target = data.cuda(), target.cuda()
 
@@ -252,49 +204,31 @@ def train(epoch):
                                                                            len(train_loader.dataset),
                                                                            100. * batch_idx / len(train_loader),
                                                                            loss.item()))
-        # print('process time: ', time.time() - end_time)
-        # end_time = time.time()
+
     history_score[epoch][0] = avg_loss / len(train_loader)
     history_score[epoch][1] = np.round(train_acc / len(train_loader), 2)
 
 
-def test_origin():
+def test(loader):
     model.eval()
     test_loss = 0
     test_acc = 0
-    for data, target in origin_testloader:
+
+    for data, target in loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         output = model(data)
         test_loss += F.cross_entropy(output, target, size_average=False).item()  # sum up batch loss
+
         prec1, prec5 = accuracy(output.data, target.data, topk=(1, 5))
         test_acc += prec1.item()
 
-    test_loss /= len(test_loader.dataset)
-    print('\n Origin test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        test_loss, test_acc, len(test_loader), test_acc / len(test_loader)))
-    return np.round(test_acc / len(test_loader), 2)
+    test_loss /= len(loader.dataset)
 
-
-def test():
-    model.eval()
-    test_loss = 0
-    test_acc = 0
-    for data, target in test_loader:
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        # data, target = Variable(data, volatile=True), Variable(target)
-        output = model(data)
-        test_loss += F.cross_entropy(output, target, size_average=False).item()  # sum up batch loss
-        # pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
-        # correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-        prec1, prec5 = accuracy(output.data, target.data, topk=(1, 5))
-        test_acc += prec1.item()
-
-    test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        test_loss, test_acc, len(test_loader), test_acc / len(test_loader)))
-    return np.round(test_acc / len(test_loader), 2)
+        test_loss, test_acc, len(loader), test_acc / len(loader)))
+
+    return np.round(test_acc / len(loader), 2)  # need to modify
 
 
 class EarlyBird():
@@ -329,7 +263,7 @@ class EarlyBird():
             if isinstance(m, nn.BatchNorm2d):
                 size = m.weight.data.numel()
                 weight_copy = m.weight.data.abs().clone()
-                _mask = weight_copy.gt(thre.cuda()).float().cuda()
+                _mask = weight_copy.gt(thre.to(device)).float().to(device)
                 mask[index:(index + size)] = _mask.view(-1)
                 # print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.format(k, _mask.shape[0], int(torch.sum(_mask))))
                 index += size
@@ -369,6 +303,7 @@ class EarlyBird():
 
 
 best_prec1 = 0.
+is_best = False
 flag_30 = True
 flag_50 = True
 flag_70 = True
@@ -421,10 +356,16 @@ for epoch in range(args.start_epoch, args.epochs):
         for param_group in optimizer.param_groups:
             param_group['lr'] *= 0.1
     train(epoch)
-    prec1 = test()
-    if args.poison_on == 1:
-        tmp = test_origin()
-    history_score[epoch][2] = prec1
+    if args.poison_on == 0 or args.kfoldset != -1:  # TMP
+        prec1 = test(test_loader)
+    else:
+        print('Test poison dataset:')
+        prec_p = test(test_loader[0])
+        print('Test clean dataset:')
+        prec_c = test(test_loader[1])
+
+        prec1 = prec_p  # TMP, need to modify
+    # history_score[epoch][2] = prec1
     np.savetxt(os.path.join(args.save, 'record.txt'), history_score, fmt='%10.5f', delimiter=',')
     is_best = prec1 > best_prec1
     best_prec1 = max(prec1, best_prec1)
@@ -434,6 +375,10 @@ for epoch in range(args.start_epoch, args.epochs):
     #     'best_prec1': best_prec1,
     #     'optimizer': optimizer.state_dict(),
     # }, is_best, epoch, filepath=args.save)
+
+    if epoch_30 != 0 and epoch_50 != 0 and epoch_70 != 0:
+        print('Find all EB, early stop!')
+        break
 
 print("Best accuracy: " + str(best_prec1))
 history_score[-1][0] = best_prec1
